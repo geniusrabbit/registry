@@ -45,7 +45,7 @@ func init() {
 }
 
 func main() {
-	if storage, err := consul.New("", os.Getenv("registry_DNS")); nil == err {
+	if storage, err := consul.New("", os.Getenv("REGISTRY_DNS")); nil == err {
 		newObserver(storage.Discovery()).Run()
 	} else {
 		log.Error(err)

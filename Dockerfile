@@ -1,8 +1,8 @@
-FROM alpine
+FROM ubuntu:trusty
 MAINTAINER GeniusRabbitCo
 
-COPY ./.build/docker/observer /observer
+COPY ./.build/docker/observer /
 
-ENV registry_DNS=http://registry:8500/dc1?refresh_interval=5
+ENV REGISTRY_DNS=http://registry:8500/dc1?refresh_interval=5
 
-ENTRYPOINT /observer
+CMD /observer
