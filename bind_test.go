@@ -6,12 +6,13 @@
 package registry_test
 
 import (
-	"testing"
-
 	"io"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	registry "."
-	"github.com/stretchr/testify/assert"
 )
 
 type conf struct {
@@ -27,6 +28,16 @@ func (s *store) Subscribe(f func(key string, value interface{})) {
 	s.fn = f
 	s.fn("service/name", "test")
 	s.fn("service/ip", "127.0.0.1")
+}
+
+// Discovery services
+func (s *store) Discovery() service.Discovery {
+	return nil
+}
+
+// Supervisor of auto refresh
+func (s *store) Supervisor(interval time.Duration) {
+	// Doommy...
 }
 
 type keyUpdater struct{}
