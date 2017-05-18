@@ -1,5 +1,7 @@
 # Registry service
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/geniusrabbit/registry)](https://goreportcard.com/report/github.com/geniusrabbit/registry)
+
 go get -v github.com/geniusrabbit/registry
 
 ## Service environment
