@@ -22,9 +22,15 @@ func (i *item) Weight() int {
 	return i.Port % 21
 }
 
-func (i *item) Connect() registry.Connect {
+func (i *item) SetWeight(weight int) {
+	// DUMMY....
+}
+
+func (i *item) Connect(_ *registry.Upstream) registry.Connect {
 	return i
 }
+
+func (i *item) Return(resultError error) {}
 
 func (i *item) Host() string {
 	return fmt.Sprintf("host:%04d => %d", i.Port, i.Weight())
