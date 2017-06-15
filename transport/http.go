@@ -10,13 +10,13 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"github.com/geniusrabbit/registry/service"
+	"github.com/geniusrabbit/registry"
 )
 
 // Transport wrapper for HTTP connection to service
 type Transport struct {
 	http.Transport
-	service.Balancer
+	registry.Balancer
 }
 
 // RoundTrip of HTTP request
@@ -30,13 +30,13 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		body, _ = ioutil.ReadAll(req.Body)
 	}
 
-	if srv, err := t.Balancer.Borrow(req.URL.Host[1:]); nil == err {
-		if req.URL.Host = srv.Host(); len(body) > 0 {
+	if conn := t.Balancer.Borrow(req.URL.Host[1:]); nil != conn {
+		if req.URL.Host = conn.Host(); len(body) > 0 {
 			req.Body = ioutil.NopCloser(
 				bytes.NewBuffer(body),
 			)
 		}
-		defer t.Balancer.Release(srv)
+		defer conn.Return(nil)
 	}
 
 	return t.Transport.RoundTrip(req)
