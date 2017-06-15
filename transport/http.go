@@ -8,6 +8,7 @@ package transport
 import (
 	"bytes"
 	"io/ioutil"
+	"net"
 	"net/http"
 
 	"github.com/geniusrabbit/registry"
@@ -25,17 +26,19 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return t.Transport.RoundTrip(req)
 	}
 
-	var body []byte
 	if req.Body != nil {
-		body, _ = ioutil.ReadAll(req.Body)
-	}
-
-	if conn := t.Balancer.Borrow(req.URL.Host[1:]); nil != conn {
-		if req.URL.Host = conn.Host(); len(body) > 0 {
+		if body, _ := ioutil.ReadAll(req.Body); len(body) > 0 {
 			req.Body = ioutil.NopCloser(
 				bytes.NewBuffer(body),
 			)
 		}
+	}
+
+	req.URL.Host = req.URL.Host[1:]
+	host, _, _ := net.SplitHostPort(req.URL.Host)
+
+	if conn := t.Balancer.Borrow(host); nil != conn {
+		req.URL.Host = conn.Host()
 		defer conn.Return(nil)
 	}
 
