@@ -19,6 +19,15 @@ type Balancer interface {
 
 	// Return connect back to pool
 	Return(conn Connect, errResult error)
+
+	// Refresh current state
+	Refresh() error
+
+	// Supervisor loop
+	Supervisor(interval time.Duration)
+
+	// Stop supervisor
+	Stop()
 }
 
 type balancer struct {
@@ -54,21 +63,21 @@ func (b *balancer) Return(conn Connect, errResult error) {
 	conn.Return(errResult)
 }
 
-// ServiceError event
-func (b *balancer) Supervisord(interval time.Duration) {
+// Supervisor loop
+func (b *balancer) Supervisor(interval time.Duration) {
 	b.Lock()
 
 	if nil != b.ticker {
 		b.ticker.Stop()
-		b.ticker = time.NewTicker(interval)
 	}
 
+	b.ticker = time.NewTicker(interval)
 	b.Unlock()
 
 	for {
 		select {
 		case <-b.ticker.C:
-			b.refresh()
+			b.Refresh()
 		default:
 			return
 		}
@@ -85,11 +94,8 @@ func (b *balancer) Stop() {
 	b.Unlock()
 }
 
-///////////////////////////////////////////////////////////////////////////////
-/// Internal methods
-///////////////////////////////////////////////////////////////////////////////
-
-func (b *balancer) refresh() error {
+// Refresh current state
+func (b *balancer) Refresh() error {
 	services, err := b.discovery.Lookup(nil)
 	if len(services) < 1 || nil != err {
 		return err

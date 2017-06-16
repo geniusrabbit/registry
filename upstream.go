@@ -126,7 +126,7 @@ func (up *Upstream) refreshStepCounters() {
 		}
 	}
 
-	if up.totalWeight%up.stepSize == 0 {
+	if up.stepSize > 0 && up.totalWeight%up.stepSize == 0 {
 		up.stepSize++
 	}
 }
