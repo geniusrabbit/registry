@@ -142,6 +142,7 @@ func (d *discovery) lookup(filter *service.Filter) (result []*service.Service, e
 		}
 	}
 
+	service.List(services).Sort()
 	for _, name := range names {
 		healthChecks, _, err := d.health.Checks(name, q)
 		if err != nil {

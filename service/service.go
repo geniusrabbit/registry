@@ -7,6 +7,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -108,3 +109,11 @@ func WeightByTags(tags []string) int {
 
 	return int(1000.0 * ((memUsage/2.0 + cpuUsage) / 150.0))
 }
+
+// List imprimentation of sort.Sorter interface
+type List []*Service
+
+func (a List) Len() int           { return len(a) }
+func (a List) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a List) Less(i, j int) bool { return a[i].ID < a[j].ID }
+func (a List) Sort()              { sort.Sort(a) }
