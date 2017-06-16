@@ -57,7 +57,9 @@ func (s *Storage) Subscribe(f func(key string, value interface{})) {
 // Discovery services
 func (s *Storage) Discovery() service.Discovery {
 	return &discovery{
+		catalog:    s.client.Catalog(),
 		agent:      s.client.Agent(),
+		health:     s.client.Health(),
 		datacenter: s.datacenter,
 	}
 }

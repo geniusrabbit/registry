@@ -6,20 +6,22 @@
 package consul
 
 import (
+	"fmt"
 	"net"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
-
-	"fmt"
 
 	"github.com/geniusrabbit/registry/service"
 	"github.com/hashicorp/consul/api"
 )
 
 type discovery struct {
-	agent      *api.Agent
 	datacenter string
+	agent      *api.Agent
+	catalog    *api.Catalog
+	health     *api.Health
 }
 
 // Register new service
@@ -79,59 +81,87 @@ func (d *discovery) Unregister(id string) error {
 }
 
 // Lookup services by filter
-func (d *discovery) Lookup(filter *service.Filter) ([]*service.Service, error) {
-	if nil == filter {
-		filter = &service.Filter{Datacenter: d.datacenter}
-	}
-
-	var statuses = make(map[string]int8)
-	if checks, err := d.agent.Checks(); err == nil {
-		for _, check := range checks {
-			var status int8 = service.StatusUndefined
-			switch check.Status {
-			case "pass", api.HealthPassing:
-				status = service.StatusPassing
-			case "warn", api.HealthWarning:
-				status = service.StatusWarning
-			case "fall", api.HealthCritical:
-				status = service.StatusCritical
-			}
-			statuses[check.ServiceID] = status
+func (d *discovery) Lookup(filter *service.Filter) (services []*service.Service, err error) {
+	var dcl []string
+	if nil == filter || "*" != filter.Datacenter {
+		if nil == filter {
+			filter = &service.Filter{Datacenter: d.datacenter}
 		}
+		return d.lookup(filter)
 	}
 
+	if dcl, err = d.catalog.Datacenters(); err != nil {
+		return nil, fmt.Errorf("Datacenters list: %s", err)
+	}
+
+	for _, dc := range dcl {
+		filter.Datacenter = dc
+		s, err := d.lookup(filter)
+		if err != nil {
+			return nil, fmt.Errorf("Datacenter %s lookup: %s", dc, err)
+		}
+		services = append(services, s...)
+	}
+	return
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// Internal methods
+///////////////////////////////////////////////////////////////////////////////
+
+// Lookup services by filter
+func (d *discovery) lookup(filter *service.Filter) (result []*service.Service, err error) {
 	var (
-		result        = make([]*service.Service, 0, len(statuses))
-		services, err = d.agent.Services()
+		names    []string
+		list     map[string][]string
+		services []*service.Service
+		q        = &api.QueryOptions{Datacenter: filter.Datacenter}
 	)
 
-	if err != nil {
+	if list, _, err = d.catalog.Services(q); err != nil {
 		return nil, err
 	}
 
-	for _, srv := range services {
-		if srv.Service == "consul" {
-			continue
+	for name := range list {
+		names = append(names, name)
+		items, _, err := d.catalog.Service(name, "", q)
+		if err != nil {
+			return nil, err
 		}
 
-		var (
-			status, _ = statuses[srv.ID]
-			srv       = &service.Service{
-				ID:         srv.ID,
-				Name:       srv.Service,
-				Datacenter: dc(srv.Tags),
-				Address:    srv.Address,
-				Port:       srv.Port,
-				Tags:       srv.Tags,
-				Status:     status,
-			}
-		)
+		for _, item := range items {
+			services = append(services, &service.Service{
+				ID:         item.ServiceID,
+				Name:       item.ServiceName,
+				Datacenter: dc(item.ServiceTags),
+				Address:    item.ServiceAddress,
+				Port:       item.ServicePort,
+				Tags:       item.ServiceTags,
+				Status:     service.StatusUndefined,
+			})
+		}
+	}
 
+	for _, name := range names {
+		healthChecks, _, err := d.health.Checks(name, q)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, check := range healthChecks {
+			f := func(i int) bool { return services[i].ID >= check.ServiceID }
+			if i := sort.Search(len(services), f); i > 0 && i < len(services) && services[i].ID == check.ServiceID {
+				services[i].Status = status(check.Status)
+			}
+		}
+	}
+
+	for _, srv := range services {
 		if srv.Test(filter) {
 			result = append(result, srv)
 		}
 	}
-	return result, nil
+	return
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -153,4 +183,17 @@ func dc(tags []string) string {
 		}
 	}
 	return ""
+}
+
+func status(st string) (status int8) {
+	status = int8(service.StatusUndefined)
+	switch st {
+	case "pass", api.HealthPassing:
+		status = service.StatusPassing
+	case "warn", api.HealthWarning:
+		status = service.StatusWarning
+	case "fall", api.HealthCritical:
+		status = service.StatusCritical
+	}
+	return
 }
