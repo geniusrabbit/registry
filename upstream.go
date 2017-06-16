@@ -93,7 +93,10 @@ func (up *Upstream) Next() Connect {
 				row -= it.Weight()
 			}
 		}
-		return up.items[rand.Intn(len(up.items)-1)].Connect(up)
+		if len(up.items) > 1 {
+			return up.items[rand.Intn(len(up.items)-1)].Connect(up)
+		}
+		return up.items[0].Connect(up)
 	}
 	return nil
 }
