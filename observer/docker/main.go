@@ -98,7 +98,7 @@ func (o *obs) Error(err error) {
 
 func (o *obs) serviceRegister(containerID string) error {
 	service, err := docker.ServiceInfo(containerID, o.docker)
-	if nil == err {
+	if nil != service && nil == err {
 		err = o.discovery.Register(*service)
 	}
 	return err

@@ -27,6 +27,10 @@ func ServiceInfo(containerID string, docker *client.Client) (*service.Options, e
 		return nil, err
 	}
 
+	if "running" != container.State.Status {
+		return nil, fmt.Errorf("Container [%s] is not running", containerID[:12])
+	}
+
 	var (
 		port string
 		name string
@@ -43,6 +47,10 @@ func ServiceInfo(containerID string, docker *client.Client) (*service.Options, e
 		case strings.HasPrefix(env, "TAG_"):
 			tags = append(tags, strings.TrimPrefix(env, "TAG_"))
 		}
+	}
+
+	if len(name) < 1 {
+		return nil, fmt.Errorf("Container [%s] is not the service", containerID[:12])
 	}
 
 	// Get port if not defined
