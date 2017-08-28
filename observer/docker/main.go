@@ -8,6 +8,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -21,7 +23,13 @@ import (
 	"github.com/geniusrabbit/registry/storage/consul"
 )
 
+var (
+	flagRegistry = flag.String("r", "", "Consul connect URL (default env REGISTRY_DNS)")
+)
+
 func init() {
+	flag.Parse()
+
 	var formatter log.Formatter
 
 	if log.IsTerminal() {
@@ -45,7 +53,13 @@ func init() {
 }
 
 func main() {
-	if storage, err := consul.New("", os.Getenv("REGISTRY_DNS")); nil == err {
+	var consulRegistry = *flagRegistry
+	if consulRegistry == "" {
+		consulRegistry = os.Getenv("REGISTRY_DNS")
+	}
+
+	fmt.Println("> Connect to:", consulRegistry)
+	if storage, err := consul.New("", consulRegistry); nil == err {
 		newObserver(storage.Discovery()).Run()
 	} else {
 		log.Error(err)

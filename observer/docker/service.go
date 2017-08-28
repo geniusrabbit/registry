@@ -55,10 +55,15 @@ func ServiceInfo(containerID string, docker *client.Client) (*service.Options, e
 
 	// Get port if not defined
 	if len(port) < 1 && len(container.NetworkSettings.Ports) > 0 {
-		for _, it := range container.NetworkSettings.Ports {
-			if len(it) > 0 {
-				port = it[0].HostPort
+		for keyPort, targetPort := range container.NetworkSettings.Ports {
+			if len(targetPort) > 0 {
+				port = targetPort[0].HostPort
 				break
+			} else if len(keyPort) > 0 {
+				if pl := strings.Split(string(keyPort), "/"); len(pl) > 0 {
+					port = pl[0]
+					break
+				}
 			}
 		}
 	}
