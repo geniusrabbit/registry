@@ -45,7 +45,7 @@ func (d *discovery) Register(options service.Options) error {
 			return err
 		}
 
-		if "" == p {
+		if p == "" {
 			return fmt.Errorf("Skip service without port [%s]", options.Address)
 		}
 

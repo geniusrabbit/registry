@@ -8,7 +8,10 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"os"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -18,16 +21,23 @@ import (
 
 // ServiceInfo by container ID
 func ServiceInfo(containerID string, docker *client.Client) (*service.Options, error) {
-	container, err := docker.ContainerInspect(
-		context.Background(),
-		containerID,
+	var (
+		container, err = docker.ContainerInspect(
+			context.Background(),
+			containerID,
+		)
+		ipAddr = container.NetworkSettings.IPAddress
 	)
+
+	if err == nil && len(ipAddr) < 1 {
+		ipAddr, err = resolveLocalIP()
+	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	if "running" != container.State.Status {
+	if container.State.Status != "running" {
 		return nil, fmt.Errorf("Container [%s] is not running", containerID[:12])
 	}
 
@@ -46,6 +56,18 @@ func ServiceInfo(containerID string, docker *client.Client) (*service.Options, e
 			port = strings.TrimPrefix(env, "SERVICE_PORT=")
 		case strings.HasPrefix(env, "TAG_"):
 			tags = append(tags, strings.TrimPrefix(env, "TAG_"))
+		}
+	}
+
+	// Get tags from labels
+	for label, val := range container.Config.Labels {
+		switch {
+		case label == "service.name":
+			name = val
+		case label == "service.port":
+			port = val
+		case strings.HasPrefix(label, "service.tag_"):
+			tags = append(tags, strings.TrimPrefix(label, "TAG_")+"="+val)
 		}
 	}
 
@@ -85,9 +107,9 @@ func ServiceInfo(containerID string, docker *client.Client) (*service.Options, e
 		ID:      container.ID,
 		Name:    name,
 		Tags:    tags,
-		Address: container.NetworkSettings.IPAddress + ":" + port,
+		Address: ipAddr + ":" + port,
 		Check: checkOptions(
-			container.NetworkSettings.IPAddress+":"+port,
+			ipAddr+":"+port,
 			container.Config.Env,
 		),
 	}, nil
@@ -151,4 +173,49 @@ func toJSON(v interface{}) string {
 		return string(json)
 	}
 	return ""
+}
+
+// resolveLocalIP returns the non loopback local IP of the host
+func resolveLocalIP() (string, error) {
+	if hostIP := os.Getenv("DOCKER_HOST_IP"); len(hostIP) > 0 {
+		return hostIP, nil
+	}
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue // interface down
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue // loopback interface
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return "", err
+		}
+
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue // not an ipv4 address
+			}
+			return ip.String(), nil
+		}
+	}
+	return "", errors.New("are you connected to the network?")
 }
