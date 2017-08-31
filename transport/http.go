@@ -22,7 +22,7 @@ type Transport struct {
 
 // RoundTrip of HTTP request
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if nil == t.Balancer || '!' != req.URL.Host[0] {
+	if t.Balancer == nil || '!' != req.URL.Host[0] {
 		return t.Transport.RoundTrip(req)
 	}
 
@@ -36,8 +36,11 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	req.URL.Host = req.URL.Host[1:]
 	host, _, _ := net.SplitHostPort(req.URL.Host)
+	if len(host) < 1 {
+		host = req.URL.Host
+	}
 
-	if conn := t.Balancer.Borrow(host); nil != conn {
+	if conn := t.Balancer.Borrow(host); conn != nil {
 		req.URL.Host = conn.Host()
 		defer conn.Return(nil)
 	}

@@ -73,6 +73,7 @@ func (b *balancer) Supervisor(interval time.Duration) {
 
 	b.ticker = time.NewTicker(interval)
 	b.Unlock()
+	b.Refresh()
 
 	for {
 		select {
