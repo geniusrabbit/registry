@@ -90,6 +90,8 @@ func newObserver(discovery service.Discovery) observer.Observer {
 }
 
 func (o *obs) Event(containerID, action string) {
+	fmt.Println("> Event", containerID, action)
+
 	switch action {
 	case "start", "unpause", "refresh":
 		log.Debugf("Register service: %s", containerID[:12])

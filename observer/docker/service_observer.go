@@ -27,11 +27,11 @@ type serviceObserver struct {
 // NewService for current docker container
 func NewService(eventer ServiceContainerEventer, host, version string, httpClient *http.Client, httpHeader map[string]string) (observer.Observer, error) {
 	var (
-		self     = &serviceObserver{}
+		self     = &serviceObserver{eventer: eventer}
 		obs, err = New(self, host, version, httpClient, httpHeader)
 	)
-	if nil == err {
-		if obs, _ := obs.(*baseObserver); nil != obs {
+	if err == nil {
+		if obs, _ := obs.(*baseObserver); obs != nil {
 			self.observer = obs
 			return self, nil
 		}
