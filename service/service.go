@@ -58,7 +58,7 @@ func (s *Service) SetWeight(weight int) {
 
 // Test service in comparison with filter
 func (s *Service) Test(filter *Filter) bool {
-	if nil == filter {
+	if filter == nil {
 		return true
 	}
 
@@ -70,7 +70,7 @@ func (s *Service) Test(filter *Filter) bool {
 		return false
 	}
 
-	if len(filter.Datacenter) != 0 && filter.Datacenter != s.Datacenter {
+	if len(filter.Datacenter) != 0 && filter.Datacenter != "*" && filter.Datacenter != s.Datacenter {
 		return false
 	}
 

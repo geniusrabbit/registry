@@ -1,6 +1,6 @@
 //
-// @project registry 2017
-// @author Dmitry Ponomarev <demdxx@gmail.com> 2017
+// @project registry 2017 - 2018
+// @author Dmitry Ponomarev <demdxx@gmail.com> 2017 - 2018
 //
 
 package docker
@@ -20,17 +20,36 @@ import (
 )
 
 // ServiceInfo by container ID
-func ServiceInfo(containerID string, docker *client.Client) (*service.Options, error) {
+func ServiceInfo(containerID string, registerHostIP bool, docker *client.Client) (*service.Options, error) {
 	var (
 		container, err = docker.ContainerInspect(
 			context.Background(),
 			containerID,
 		)
-		ipAddr = container.NetworkSettings.IPAddress
+		ipAddr       = container.NetworkSettings.IPAddress
+		dockerIPAddr = container.NetworkSettings.IPAddress
+		port         string
+		name         string
+		tags         []string
 	)
 
-	if err == nil && len(ipAddr) < 1 {
-		ipAddr, err = resolveLocalIP()
+	// Reset IP on HostIP
+	for _, targetPort := range container.NetworkSettings.Ports {
+		if len(targetPort) > 0 && len(targetPort[0].HostIP) > 0 {
+			if registerHostIP {
+				ipAddr = targetPort[0].HostIP
+			}
+			port = targetPort[0].HostPort
+			break
+		}
+	} // end for
+
+	if err == nil && len(dockerIPAddr) < 1 {
+		dockerIPAddr, err = resolveLocalIP()
+	}
+
+	if len(ipAddr) < 1 {
+		ipAddr = dockerIPAddr
 	}
 
 	if err != nil {
@@ -41,19 +60,15 @@ func ServiceInfo(containerID string, docker *client.Client) (*service.Options, e
 		return nil, fmt.Errorf("Container [%s] is not running", containerID[:12])
 	}
 
-	var (
-		port string
-		name string
-		tags []string
-	)
-
 	// Get tags from environment
 	for _, env := range container.Config.Env {
 		switch {
 		case strings.HasPrefix(env, "SERVICE_NAME="):
 			name = strings.TrimPrefix(env, "SERVICE_NAME=")
 		case strings.HasPrefix(env, "SERVICE_PORT="):
-			port = strings.TrimPrefix(env, "SERVICE_PORT=")
+			if v := strings.TrimPrefix(env, "SERVICE_PORT="); len(v) > 0 {
+				port = v
+			}
 		case strings.HasPrefix(env, "TAG_"):
 			tags = append(tags, strings.TrimPrefix(env, "TAG_"))
 		}
@@ -62,12 +77,12 @@ func ServiceInfo(containerID string, docker *client.Client) (*service.Options, e
 	// Get tags from labels
 	for label, val := range container.Config.Labels {
 		switch {
-		case label == "service.name":
+		case label == "service.name" && val != "":
 			name = val
-		case label == "service.port":
+		case label == "service.port" && val != "":
 			port = val
 		case strings.HasPrefix(label, "service.tag_"):
-			tags = append(tags, strings.TrimPrefix(label, "TAG_")+"="+val)
+			tags = append(tags, strings.TrimPrefix(label, "service.tag_")+"="+val)
 		}
 	}
 
@@ -80,14 +95,15 @@ func ServiceInfo(containerID string, docker *client.Client) (*service.Options, e
 		for keyPort, targetPort := range container.NetworkSettings.Ports {
 			if len(targetPort) > 0 {
 				port = targetPort[0].HostPort
-				break
 			} else if len(keyPort) > 0 {
 				if pl := strings.Split(string(keyPort), "/"); len(pl) > 0 {
 					port = pl[0]
-					break
 				}
 			}
-		}
+			if len(port) > 0 {
+				break
+			}
+		} // end for
 	}
 
 	// Container stat
@@ -109,8 +125,9 @@ func ServiceInfo(containerID string, docker *client.Client) (*service.Options, e
 		Tags:    tags,
 		Address: ipAddr + ":" + port,
 		Check: checkOptions(
-			ipAddr+":"+port,
+			dockerIPAddr+":"+port,
 			container.Config.Env,
+			container.Config.Labels,
 		),
 	}, nil
 }
@@ -147,7 +164,7 @@ func ContainerStats(containerID string, docker *client.Client) (*Stats, error) {
 	}, nil
 }
 
-func checkOptions(address string, env []string) service.CheckInfo {
+func checkOptions(address string, env []string, labels map[string]string) service.CheckInfo {
 	options := service.CheckInfo{
 		Interval: "5s",
 		Timeout:  "2s",
@@ -165,6 +182,24 @@ func checkOptions(address string, env []string) service.CheckInfo {
 			options.TCP = strings.Replace(strings.TrimPrefix(e, "CHECK_TCP="), "{{address}}", address, 1)
 		}
 	}
+
+	// In formation in labels most improtant then environment
+	for label, val := range labels {
+		if val == "" {
+			continue
+		}
+		switch label {
+		case "service.check.interval":
+			options.Interval = val
+		case "service.check.timeout":
+			options.Timeout = val
+		case "service.check.httpaddr":
+			options.HTTP = strings.Replace(val, "{{address}}", address, 1)
+		case "service.check.tcpaddr":
+			options.TCP = strings.Replace(val, "{{address}}", address, 1)
+		}
+	}
+
 	return options
 }
 
@@ -178,6 +213,10 @@ func toJSON(v interface{}) string {
 // resolveLocalIP returns the non loopback local IP of the host
 func resolveLocalIP() (string, error) {
 	if hostIP := os.Getenv("DOCKER_HOST_IP"); len(hostIP) > 0 {
+		return hostIP, nil
+	}
+
+	if hostIP := os.Getenv("DEFAULT_HOST_IP"); len(hostIP) > 0 {
 		return hostIP, nil
 	}
 

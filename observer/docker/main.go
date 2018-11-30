@@ -1,7 +1,8 @@
 //
-// @project registry 2017
-// @author Dmitry Ponomarev <demdxx@gmail.com> 2017
+// @project registry 2017 - 2018
+// @author Dmitry Ponomarev <demdxx@gmail.com> 2017 - 2018
 //
+// @NOTE: Consul have to be run in docker
 
 // +build ignore
 
@@ -14,7 +15,6 @@ import (
 	_ "net/http/pprof"
 	"os"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/demdxx/gocast"
 	"github.com/docker/docker/client"
 	"github.com/geniusrabbit/registry/observer"
@@ -23,28 +23,18 @@ import (
 	"github.com/geniusrabbit/registry/storage/consul"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
-	flagListen   = flag.String("listen", ":8080", "Listen and serve HTTP address")
-	flagRegistry = flag.String("r", "", "Consul connect URL (default env REGISTRY_DNS)")
+	flagListen       = flag.String("listen", ":8080", "Listen and serve HTTP address")
+	flagRegistry     = flag.String("r", "", "Consul connect URL (default env REGISTRY_DNS)")
+	flagRegisterHost = flag.Bool("h", false, "Register host address in DNS is it's possible")
+	// If are you use consul as local DNS it will be useful
 )
 
 func init() {
 	flag.Parse()
-
-	var formatter log.Formatter
-
-	if log.IsTerminal() {
-		formatter = &log.TextFormatter{
-			FullTimestamp:   true,
-			TimestampFormat: "2006-01-02 15:04:05 MST",
-		}
-	} else {
-		formatter = &log.JSONFormatter{
-			TimestampFormat: "2006-01-02 15:04:05 MST",
-		}
-	}
 
 	log.SetLevel(log.InfoLevel)
 	if gocast.ToBool(os.Getenv("DEBUG")) {
@@ -52,19 +42,27 @@ func init() {
 		go func() { log.Println(http.ListenAndServe(":6060", nil)) }()
 	}
 
-	log.SetFormatter(formatter)
+	log.SetFormatter(&log.JSONFormatter{TimestampFormat: "2006-01-02 15:04:05 MST"})
 }
 
 func main() {
-	var consulRegistry = *flagRegistry
+	var (
+		consulRegistry = *flagRegistry
+		registerHost   = *flagRegisterHost
+	)
+
 	if consulRegistry == "" {
 		consulRegistry = os.Getenv("REGISTRY_DNS")
+	}
+
+	if !registerHost {
+		registerHost = gocast.ToBool(os.Getenv("OBSERVER_REGISTER_HOST_IP"))
 	}
 
 	fmt.Println("> Connect to:", consulRegistry)
 	if storage, err := consul.New("", consulRegistry); nil == err {
 		go runWebService(*flagListen, storage)
-		newObserver(storage.Discovery()).Run()
+		newObserver(storage.Discovery(), registerHost).Run()
 	} else {
 		log.Error(err)
 	}
@@ -85,13 +83,15 @@ func runWebService(address string, storage *consul.Storage) error {
 
 // Observer event processor
 type obs struct {
-	docker    *client.Client
-	discovery service.Discovery
+	hostIPAddr bool
+	docker     *client.Client
+	discovery  service.Discovery
 }
 
-func newObserver(discovery service.Discovery) observer.Observer {
+func newObserver(discovery service.Discovery, registerHost bool) observer.Observer {
+	fmt.Println(">>>> newObserver", registerHost)
 	var (
-		subObs   = &obs{discovery: discovery}
+		subObs   = &obs{hostIPAddr: registerHost, discovery: discovery}
 		obs, err = docker.New(
 			subObs,
 			os.Getenv("DOCKER_HOST"),
@@ -99,7 +99,7 @@ func newObserver(discovery service.Discovery) observer.Observer {
 			nil, nil,
 		)
 	)
-	if nil != err {
+	if err != nil {
 		panic(err)
 	}
 	subObs.docker = obs.Docker()
@@ -110,11 +110,9 @@ func (o *obs) Event(containerID, action string) {
 	switch action {
 	case "start", "unpause", "refresh":
 		log.Debugf("Register service: %s", containerID[:12])
-		go func() {
-			if err := o.serviceRegister(containerID); err != nil {
-				log.Errorf("Register service [%s]: %v", containerID[:12], err)
-			}
-		}()
+		if err := o.serviceRegister(containerID); err != nil {
+			log.Errorf("Register service [%s]: %v", containerID[:12], err)
+		}
 	case "die", "kill", "stop", "pause", "oom", "destroy":
 		log.Debugf("Unregister service [%s]: %s", action, containerID[:12])
 		if err := o.discovery.Unregister(containerID); err != nil {
@@ -133,8 +131,8 @@ func (o *obs) Error(err error) {
 }
 
 func (o *obs) serviceRegister(containerID string) error {
-	service, err := docker.ServiceInfo(containerID, o.docker)
-	if nil != service && nil == err {
+	service, err := docker.ServiceInfo(containerID, o.hostIPAddr, o.docker)
+	if service != nil && err == nil {
 		err = o.discovery.Register(*service)
 	}
 	return err
@@ -154,7 +152,7 @@ func unregisterService(storage *consul.Storage) echo.HandlerFunc {
 		if err != nil {
 			return ctx.JSON(http.StatusOK, map[string]interface{}{
 				"result": "error",
-				"error":  err,
+				"error":  err.Error(),
 			})
 		}
 
@@ -162,8 +160,9 @@ func unregisterService(storage *consul.Storage) echo.HandlerFunc {
 			discovery.Unregister(srv.ID)
 		}
 
-		return ctx.JSON(http.StatusOK, map[string]string{
-			"result": "ok",
+		return ctx.JSON(http.StatusOK, map[string]interface{}{
+			"result":   "ok",
+			"services": servs,
 		})
 	}
 }

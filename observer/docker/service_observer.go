@@ -1,6 +1,6 @@
 //
-// @project registry 2017
-// @author Dmitry Ponomarev <demdxx@gmail.com> 2017
+// @project registry 2017 - 2018
+// @author Dmitry Ponomarev <demdxx@gmail.com> 2017 - 2018
 //
 
 package docker
@@ -20,14 +20,15 @@ type ServiceContainerEventer interface {
 }
 
 type serviceObserver struct {
-	eventer  ServiceContainerEventer
-	observer *baseObserver
+	hostIPAddr bool
+	eventer    ServiceContainerEventer
+	observer   *baseObserver
 }
 
 // NewService for current docker container
-func NewService(eventer ServiceContainerEventer, host, version string, httpClient *http.Client, httpHeader map[string]string) (observer.Observer, error) {
+func NewService(eventer ServiceContainerEventer, host, version string, httpClient *http.Client, httpHeader map[string]string, registerHost bool) (observer.Observer, error) {
 	var (
-		self     = &serviceObserver{eventer: eventer}
+		self     = &serviceObserver{eventer: eventer, hostIPAddr: registerHost}
 		obs, err = New(self, host, version, httpClient, httpHeader)
 	)
 	if err == nil {
@@ -56,7 +57,8 @@ func (s *serviceObserver) Docker() *client.Client {
 
 // Event processor
 func (s *serviceObserver) Event(containerID, action string) {
-	if options, err := ServiceInfo(containerID, s.observer.docker); nil == err {
+	options, err := ServiceInfo(containerID, s.hostIPAddr, s.observer.docker)
+	if err == nil {
 		var srv = options.Service()
 		switch action {
 		case "start", "unpause", "refresh":
@@ -74,7 +76,7 @@ func (s *serviceObserver) Event(containerID, action string) {
 
 // Error processor
 func (s *serviceObserver) Error(err error) {
-	if nil != err {
+	if err != nil {
 		s.eventer.ServiceError(err)
 	}
 }

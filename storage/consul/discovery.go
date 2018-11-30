@@ -1,6 +1,6 @@
 //
-// @project registry 2017
-// @author Dmitry Ponomarev <demdxx@gmail.com> 2017
+// @project registry 2017 - 2018
+// @author Dmitry Ponomarev <demdxx@gmail.com> 2017 - 2018
 //
 
 package consul
@@ -83,8 +83,8 @@ func (d *discovery) Unregister(id string) error {
 // Lookup services by filter
 func (d *discovery) Lookup(filter *service.Filter) (services []*service.Service, err error) {
 	var dcl []string
-	if nil == filter || "*" != filter.Datacenter {
-		if nil == filter {
+	if filter == nil || (filter.Datacenter != "" && filter.Datacenter != "*") {
+		if filter == nil {
 			filter = &service.Filter{Datacenter: d.datacenter}
 		}
 		return d.lookup(filter)
@@ -133,7 +133,7 @@ func (d *discovery) lookup(filter *service.Filter) (result []*service.Service, e
 			services = append(services, &service.Service{
 				ID:         item.ServiceID,
 				Name:       item.ServiceName,
-				Datacenter: dc(item.ServiceTags),
+				Datacenter: dcOrDefault(item.Datacenter, filter.Datacenter),
 				Address:    item.ServiceAddress,
 				Port:       item.ServicePort,
 				Tags:       item.ServiceTags,
@@ -184,6 +184,13 @@ func dc(tags []string) string {
 		}
 	}
 	return ""
+}
+
+func dcOrDefault(dc, def string) string {
+	if dc == "" {
+		return def
+	}
+	return dc
 }
 
 func status(st string) (status int8) {
